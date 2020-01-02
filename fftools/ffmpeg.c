@@ -126,6 +126,12 @@ typedef struct BenchmarkTimeStamps {
     int64_t sys_usec;
 } BenchmarkTimeStamps;
 
+#define PRELOAD_CODEC
+#ifdef PRELOAD_CODEC
+AVCodecContext *preload_enc_ctx = NULL;
+AVCodec *preload_enc = NULL;
+#endif
+
 static void do_video_stats(OutputStream *ost, int frame_size);
 static BenchmarkTimeStamps get_benchmark_time_stamps(void);
 static int64_t getmaxrss(void);
@@ -3446,6 +3452,10 @@ static int init_output_stream(OutputStream *ost, char *error, int error_len)
     int ret = 0;
 
     if (ost->encoding_needed) {
+#ifdef PRELOAD_CODEC
+        ost->enc_ctx = preload_enc_ctx;
+        ost->enc = preload_enc;
+#endif
         AVCodec      *codec = ost->enc;
         AVCodecContext *dec = NULL;
         InputStream *ist;
@@ -3505,6 +3515,7 @@ static int init_output_stream(OutputStream *ost, char *error, int error_len)
             }
         }
 
+#ifndef PRELOAD_CODEC
         if ((ret = avcodec_open2(ost->enc_ctx, codec, &ost->encoder_opts)) < 0) {
             if (ret == AVERROR_EXPERIMENTAL)
                 abort_codec_experimental(codec, 1);
@@ -3514,11 +3525,12 @@ static int init_output_stream(OutputStream *ost, char *error, int error_len)
                     ost->file_index, ost->index);
             return ret;
         }
+#endif
         if (ost->enc->type == AVMEDIA_TYPE_AUDIO &&
             !(ost->enc->capabilities & AV_CODEC_CAP_VARIABLE_FRAME_SIZE))
             av_buffersink_set_frame_size(ost->filter->filter,
                                             ost->enc_ctx->frame_size);
-        assert_avoptions(ost->encoder_opts);
+        // assert_avoptions(ost->encoder_opts);
         if (ost->enc_ctx->bit_rate && ost->enc_ctx->bit_rate < 1000 &&
             ost->enc_ctx->codec_id != AV_CODEC_ID_CODEC2 /* don't complain about 700 bit/s modes */)
             av_log(NULL, AV_LOG_WARNING, "The bitrate parameter is set too low."
