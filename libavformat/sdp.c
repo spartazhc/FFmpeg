@@ -668,6 +668,15 @@ static char *sdp_write_media_attributes(char *buff, int size, AVStream *st, int 
             av_strlcatf(buff, size, "a=rtpmap:%d VP9/90000\r\n",
                                      payload_type);
             break;
+        case AV_CODEC_ID_AV1:
+            av_strlcatf(buff, size, "a=rtpmap:%d AV1/90000\r\n",
+                                     payload_type);
+            // if (p->extradata_size)   // no extradata, where to add?
+            //     config = extradata2psets_av1(p);
+            // if (config)
+            //     av_strlcatf(buff, size, "a=fmtp:%d %s\r\n",
+            //                              payload_type, config);
+            break;
         case AV_CODEC_ID_MJPEG:
             if (payload_type >= RTP_PT_PRIVATE)
                 av_strlcatf(buff, size, "a=rtpmap:%d JPEG/90000\r\n",
