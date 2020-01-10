@@ -7,9 +7,11 @@ static const uint64_t kMaximumLeb128Value = 0xFFFFFFFFFFFFFF;  // 2 ^ 56 - 1
 static uint8_t firstPacketReceived = 0;
 
 #define AGGRE_HEADER_SIZE 1
-#define AV1_RTP_FLAG_Z (1 << 7)
-#define AV1_RTP_FLAG_Y (1 << 6)
-#define AV1_RTP_FLAG_N (1 << 3)
+#define AV1_RTP_FLAG_Z 0x80
+#define AV1_RTP_FLAG_Y 0x40
+#define AV1_RTP_FLAG_N 0x04
+#define AV1_RTP_FLAG_W1 0x10
+
 #define AV1_RTP_FLAG_NONE 0
 
 static size_t eb_aom_uleb_size_in_bytes(uint64_t value) {
@@ -126,7 +128,7 @@ static void obu_send(AVFormatContext *s1, const uint8_t *buf, int size, int last
 
         // 再处理剩下的部分
         while (size + AGGRE_HEADER_SIZE > s->max_payload_size) {
-            update_aggregate_hdr(s1, AV1_RTP_FLAG_Z | AV1_RTP_FLAG_Y, 1);
+            update_aggregate_hdr(s1, AV1_RTP_FLAG_Z | AV1_RTP_FLAG_Y | AV1_RTP_FLAG_W1, 1);
             memcpy(&s->buf[AGGRE_HEADER_SIZE], buf, s->max_payload_size - AGGRE_HEADER_SIZE);
             ff_rtp_send_data(s1, s->buf, s->max_payload_size, 0);
             buf  += s->max_payload_size - AGGRE_HEADER_SIZE;
@@ -139,7 +141,7 @@ static void obu_send(AVFormatContext *s1, const uint8_t *buf, int size, int last
         memcpy(s->buf + header_size, buf, size);
         ff_rtp_send_data(s1, s->buf, size + header_size, last);
     }
-
+    free(obu_ele_hdr);
 }
 
 void ff_rtp_send_av1(AVFormatContext *s1, const uint8_t *buf, int size)
