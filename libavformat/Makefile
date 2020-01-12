@@ -59,6 +59,7 @@ OBJS-$(CONFIG_RTPDEC)                    += rdt.o                       \
                                             rtpdec_vc2hq.o              \
                                             rtpdec_vp8.o                \
                                             rtpdec_vp9.o                \
+                                            rtpdec_av1.o                \
                                             rtpdec_xiph.o
 OBJS-$(CONFIG_RTPENC_CHAIN)              += rtpenc_chain.o rtp.o
 OBJS-$(CONFIG_SHARED)                    += log2_tab.o golomb_tab.o

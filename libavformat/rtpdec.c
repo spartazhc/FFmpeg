@@ -118,6 +118,7 @@ static const RTPDynamicProtocolHandler *rtp_dynamic_protocol_handler_list[] = {
     &ff_vorbis_dynamic_handler,
     &ff_vp8_dynamic_handler,
     &ff_vp9_dynamic_handler,
+    &ff_av1_dynamic_handler,
     &gsm_dynamic_handler,
     &l24_dynamic_handler,
     &opus_dynamic_handler,

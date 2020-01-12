@@ -1,3 +1,24 @@
+/*
+ * RTP parser for AV1 payload format (draft) - experimental
+ * Copyright (c) 2020 Zhong Hongcheng <hongcheng.zhong@intel.com>
+ *
+ * This file is part of FFmpeg.
+ *
+ * FFmpeg is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 2.1 of the License, or (at your option) any later version.
+ *
+ * FFmpeg is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with FFmpeg; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
+ */
+
 #include "rtpenc.h"
 #include "libavcodec/av1.h"
 #include "libavcodec/av1_parse.h"
@@ -57,12 +78,9 @@ static void update_aggregate_hdr(AVFormatContext *s1, uint8_t flag, uint8_t clea
 {
     RTPMuxContext *s = s1->priv_data;
     if (clear) {
-        memset(s->buf, 0, sizeof(uint8_t));
+        s->buf[0] = 0;
     }
-    s->buf[0] &= flag;
-    if (s->buffered_nals > 3) {
-        s->buf[0] &= 0x30;
-    }
+    s->buf[0] |= flag;
 }
 
 static void flush_buffered(AVFormatContext *s1, int last)
@@ -72,54 +90,51 @@ static void flush_buffered(AVFormatContext *s1, int last)
         ff_rtp_send_data(s1, s->buf, s->buf_ptr - s->buf, last);
     }
     s->buf_ptr = s->buf;
-    s->buffered_nals = 0;
 }
 
-// 只把一个obu拆成多个rtp_payload，没有合并多个obu到一个rtp_payload
+/* simplified version: only split obu which can not put into one rtp_payload */
 static void obu_send(AVFormatContext *s1, const uint8_t *buf, int size, int last)
 {
-    RTPMuxContext *s = s1->priv_data;
-
-    uint8_t *obu_ele_hdr, first;
+    uint8_t first;
     size_t obu_ele_siz;
-    int header_size;
-    obu_ele_hdr = (uint8_t *)malloc(sizeof(obu_ele_hdr) * 2);
-    // if (size <= 0)
-    //     return AVERROR_INVALIDDATA;
-    eb_aom_uleb_encode(size, sizeof(size), obu_ele_hdr, &obu_ele_siz);
-    header_size = obu_ele_siz + AGGRE_HEADER_SIZE;
+    // uint8_t *obu_ele_hdr, header_size;
+    RTPMuxContext *s = s1->priv_data;
+    // obu_ele_hdr = (uint8_t *)malloc(sizeof(obu_ele_hdr) * 2);
+    if (size <= 0)
+        return;
+    // header_size = obu_ele_siz + AGGRE_HEADER_SIZE;
 
     av_log(s1, AV_LOG_DEBUG, "Sending OBU Type: %x of len %d M=%d\n", buf[0] & 0x7F, size, last);
 
-    if (size + header_size <= s->max_payload_size) {
-        update_aggregate_hdr(s1, AV1_RTP_FLAG_NONE, 0);
-        memcpy(s->buf + AGGRE_HEADER_SIZE, obu_ele_hdr, obu_ele_siz);
-        memcpy(s->buf + header_size, buf, size);
-        ff_rtp_send_data(s1, buf, size + header_size, last);
+    if (size + AGGRE_HEADER_SIZE <= s->max_payload_size) {
+        update_aggregate_hdr(s1, AV1_RTP_FLAG_NONE, 1);
+        if (!firstPacketReceived) {
+            update_aggregate_hdr(s1, AV1_RTP_FLAG_N, 1);
+            firstPacketReceived = 1;
+        }
+        memcpy(&s->buf[AGGRE_HEADER_SIZE], buf, size);
+        ff_rtp_send_data(s1, s->buf, size + AGGRE_HEADER_SIZE, last);
     } else {
         av_log(s1, AV_LOG_DEBUG, "OBU size %d > %d\n", size, s->max_payload_size);
         first = 1;
         while (size + AGGRE_HEADER_SIZE > s->max_payload_size) {
-            // first rtp_payload should not have AV1_RTP_FLAG_Z
+            /* first rtp_payload should not have AV1_RTP_FLAG_Z */
             if (first == 1) {
                 update_aggregate_hdr(s1, AV1_RTP_FLAG_Y | AV1_RTP_FLAG_W1, 1);
                 first = 0;
             } else {
                 update_aggregate_hdr(s1, AV1_RTP_FLAG_Z, 0);
             }
-            memcpy(s->buf + AGGRE_HEADER_SIZE, buf, s->max_payload_size - AGGRE_HEADER_SIZE);
+            memcpy(&s->buf[AGGRE_HEADER_SIZE], buf, s->max_payload_size - AGGRE_HEADER_SIZE);
             ff_rtp_send_data(s1, s->buf, s->max_payload_size, 0);
             buf  += s->max_payload_size - AGGRE_HEADER_SIZE;
             size -= s->max_payload_size - AGGRE_HEADER_SIZE;
         }
         update_aggregate_hdr(s1, AV1_RTP_FLAG_Z, 1);
-        eb_aom_uleb_encode(size, sizeof(size), obu_ele_hdr, &obu_ele_siz);
-        header_size = obu_ele_siz + AGGRE_HEADER_SIZE;
-        memcpy(s->buf + AGGRE_HEADER_SIZE, obu_ele_hdr, obu_ele_siz);
-        memcpy(s->buf + header_size, buf, size);
-        ff_rtp_send_data(s1, s->buf, size + header_size, last);
+        memcpy(&s->buf[AGGRE_HEADER_SIZE], buf, size);
+        ff_rtp_send_data(s1, s->buf, size + AGGRE_HEADER_SIZE, last);
     }
-    free(obu_ele_hdr);
+    // free(obu_ele_hdr);
 }
 
 void ff_rtp_send_av1(AVFormatContext *s1, const uint8_t *buf, int size)
@@ -132,9 +147,6 @@ void ff_rtp_send_av1(AVFormatContext *s1, const uint8_t *buf, int size)
     s->timestamp = s->cur_timestamp;
     s->buf_ptr   = s->buf;
 
-    if (!firstPacketReceived) {
-        update_aggregate_hdr(s1, AV1_RTP_FLAG_N, 1);
-    }
     while (size > 0) {
         int len = parse_obu_header(buf, size, &obu_size, &start_pos,
                                    &type, &temporal_id, &spatial_id);
