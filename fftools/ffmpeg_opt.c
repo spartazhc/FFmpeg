@@ -112,6 +112,11 @@ int filter_nbthreads = 0;
 int filter_complex_nbthreads = 0;
 int vstats_version = 2;
 
+#define PRELOAD_CODEC
+#ifdef PRELOAD_CODEC
+extern AVCodec *preload_enc;
+extern AVCodecContext *preload_enc_ctx;
+#endif
 
 static int intra_only         = 0;
 static int file_overwrite     = 0;
@@ -1336,7 +1341,11 @@ static int choose_encoder(OptionsContext *o, AVFormatContext *s, OutputStream *o
         } else if (!strcmp(codec_name, "copy"))
             ost->stream_copy = 1;
         else {
+#ifdef PRELOAD_CODEC
+            ost->enc = preload_enc;
+#else
             ost->enc = find_codec_or_die(codec_name, ost->st->codecpar->codec_type, 1);
+#endif
             ost->st->codecpar->codec_id = ost->enc->id;
         }
         ost->encoding_needed = !ost->stream_copy;
@@ -1384,8 +1393,12 @@ static OutputStream *new_output_stream(OptionsContext *o, AVFormatContext *oc, e
                "%d:%d\n", ost->file_index, ost->index);
         exit_program(1);
     }
-
     ost->enc_ctx = avcodec_alloc_context3(ost->enc);
+// #ifdef PRELOAD_CODEC
+//     ost->enc_ctx = preload_enc_ctx;
+// #else
+//     ost->enc_ctx = avcodec_alloc_context3(ost->enc);
+// #endif
     if (!ost->enc_ctx) {
         av_log(NULL, AV_LOG_ERROR, "Error allocating the encoding context.\n");
         exit_program(1);
@@ -3295,6 +3308,39 @@ static int open_files(OptionGroupList *l, const char *inout,
     return 0;
 }
 
+#ifdef PRELOAD_CODEC
+int preload_encoder() {
+    AVCodecContext *enc_ctx;
+    AVCodec *enc;
+    AVDictionary    *encoder_opts = NULL;
+    enc = avcodec_find_encoder(AV_CODEC_ID_AV1);
+    if (!enc) {
+        av_log(NULL, AV_LOG_ERROR, "Automatic encoder selection failed.\n");
+        exit_program(1);
+    }
+    enc_ctx = avcodec_alloc_context3(enc);
+    if (!enc_ctx) {
+        av_log(NULL, AV_LOG_ERROR, "Error allocating the encoding context.\n");
+        exit_program(1);
+    }
+    enc_ctx->codec_type = AVMEDIA_TYPE_VIDEO;
+    enc_ctx->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
+    enc_ctx->framerate.num = 25;
+    enc_ctx->time_base.num = 1;
+    enc_ctx->time_base.den = 25;
+    enc_ctx->width = 1280;
+    enc_ctx->height = 720;
+    enc_ctx->pix_fmt = AV_PIX_FMT_YUV420P;
+    enc_ctx->chroma_sample_location = AVCHROMA_LOC_LEFT;
+    av_dict_set(&encoder_opts, "preset", "8", 0);
+    int ret = avcodec_open2(enc_ctx, enc, &encoder_opts);
+    preload_enc = enc;
+    preload_enc_ctx = enc_ctx;
+    printf("preload encoder success!\n");
+    return ret;
+}
+#endif
+
 int ffmpeg_parse_options(int argc, char **argv)
 {
     OptionParseContext octx;
@@ -3320,7 +3366,9 @@ int ffmpeg_parse_options(int argc, char **argv)
 
     /* configure terminal and setup signal handlers */
     term_init();
-
+#ifdef PRELOAD_CODEC
+    ret = preload_encoder();
+#endif
     /* open input files */
     ret = open_files(&octx.groups[GROUP_INFILE], "input", open_input_file);
     if (ret < 0) {
