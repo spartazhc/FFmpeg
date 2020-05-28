@@ -29,6 +29,7 @@
 #include "libavutil/opt.h"
 #include "libavutil/pixdesc.h"
 #include "libavutil/avassert.h"
+#include "libavutil/time.h"
 
 #include "internal.h"
 #include "avcodec.h"
@@ -66,7 +67,7 @@ typedef struct SvtContext {
     int level;
     int profile;
 
-    int base_layer_switch_mode;
+    // int base_layer_switch_mode;
 } SvtContext;
 
 static const struct {
@@ -201,9 +202,13 @@ static int config_enc_params(EbSvtAv1EncConfiguration *param,
     param->level                  = svt_enc->level;
     param->rate_control_mode        = svt_enc->rc_mode;
     param->scene_change_detection   = svt_enc->scd;
-    param->base_layer_switch_mode    = svt_enc->base_layer_switch_mode;
+    // param->base_layer_switch_mode    = svt_enc->base_layer_switch_mode;
     param->qp                     = svt_enc->qp;
 
+    param->pred_structure = 0;
+    param->enable_altrefs = 0;
+    param->tile_rows = 1;
+    param->tile_columns = 2;
 
     param->target_bit_rate          = avctx->bit_rate;
     if (avctx->gop_size > 0)
@@ -377,6 +382,9 @@ static int eb_receive_packet(AVCodecContext *avctx, AVPacket *pkt)
     pkt->size = headerPtr->n_filled_len;
     pkt->pts  = headerPtr->pts;
     pkt->dts  = headerPtr->dts;
+
+    // av_log(avctx, AV_LOG_INFO, "pts=%lu: %lu\n", pkt->pts, av_gettime());
+
     if (headerPtr->pic_type == EB_AV1_KEY_PICTURE) {
         pkt->flags |= AV_PKT_FLAG_KEY;
         pict_type = AV_PICTURE_TYPE_I;
@@ -483,8 +491,8 @@ static const AVOption options[] = {
     { "sc_detection", "Scene change detection", OFFSET(scd),
       AV_OPT_TYPE_BOOL, { .i64 = 0 }, 0, 1, VE },
 
-    { "bl_mode", "Random Access Prediction Structure type setting", OFFSET(base_layer_switch_mode),
-      AV_OPT_TYPE_BOOL, { .i64 = 0 }, 0, 1, VE },
+    // { "bl_mode", "Random Access Prediction Structure type setting", OFFSET(base_layer_switch_mode),
+    //   AV_OPT_TYPE_BOOL, { .i64 = 0 }, 0, 1, VE },
 
     { "forced-idr", "If forcing keyframes, force them as IDR frames.", OFFSET(forced_idr),
       AV_OPT_TYPE_BOOL,   { .i64 = 0 }, 0, 1, VE },

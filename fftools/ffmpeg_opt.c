@@ -3325,14 +3325,17 @@ int preload_encoder() {
     }
     enc_ctx->codec_type = AVMEDIA_TYPE_VIDEO;
     enc_ctx->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
-    enc_ctx->framerate.num = 25;
+    enc_ctx->framerate.num = 30;
     enc_ctx->time_base.num = 1;
-    enc_ctx->time_base.den = 25;
-    enc_ctx->width = 1280;
-    enc_ctx->height = 720;
+    enc_ctx->time_base.den = 30;
+    enc_ctx->width = 1920;
+    enc_ctx->height = 1080;
     enc_ctx->pix_fmt = AV_PIX_FMT_YUV420P;
     enc_ctx->chroma_sample_location = AVCHROMA_LOC_LEFT;
     av_dict_set(&encoder_opts, "preset", "8", 0);
+    av_dict_set(&encoder_opts, "sc_detection", "0", 0);
+    av_dict_set(&encoder_opts, "qp", "31", 0);
+    av_dict_set(&encoder_opts, "la_depth", "0", 0);
     int ret = avcodec_open2(enc_ctx, enc, &encoder_opts);
     preload_enc = enc;
     preload_enc_ctx = enc_ctx;
